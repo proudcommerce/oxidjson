@@ -179,10 +179,7 @@ class OxRestBase extends Resource {
             foreach ($vars as $key => $value) {
                 if (($pos = strpos($key, '__')) > 0) {
                     $key = substr($key, $pos + 2);
-                    if (
-                            strpos($key, 'password') > 0 ||
-                            strpos($key, 'passsalt') > 0
-                    ) {
+                    if ($this->_keyIsBlacklisted($key)) {
                         continue;
                     }
                     $value = $value->getRawValue();
@@ -191,6 +188,25 @@ class OxRestBase extends Resource {
             }
         }
         return $a;
+    }
+
+    /**
+     * Check if a certain object key is blacklisted, e.g. password fields
+     *
+     * @param $sKey
+     * @return bool
+     */
+    protected function _keyIsBlacklisted($sKey)
+    {
+        $aBlacklisted = oxRegistry::getConfig()->getShopConfVar('aOxidJsonBlacklistKeys');
+        if($aBlacklisted && is_array($aBlacklisted)) {
+            foreach($aBlacklisted as $sTerm) {
+                if(strpos($sKey, $sTerm) > 0 ) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -210,7 +226,13 @@ class OxRestBase extends Resource {
                 return array_map(array('oxRestBase','_objectToArray'), $d);
             }
             else {
-                // Return array
+                // return filtered array
+                foreach($d as $k => $v) {
+                    $k = strtolower($k);
+                    if($this->_keyIsBlacklisted($k)) {
+                        unset($d[$k]);
+                    }
+                }
                 return $d;
             }
 	}

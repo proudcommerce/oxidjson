@@ -134,8 +134,8 @@ class OxRestList extends OxRestBase
         try {
             $ret = array();
             // check for data in request
-            if(isset($this->request->data)  && $this->request->data != ""){
-                //$this->_doLog("CLASS: $class\nDATA: " . print_r(json_encode($this->request->data), true));
+            if($this->request->data && $this->request->data != ""){
+                $this->_doLog("CLASS: $class\nDATA: " . print_r(json_encode($this->request->data), true));
                 
                 /** @var oxList $list */
                 $list = oxNew($class);
@@ -176,7 +176,7 @@ class OxRestList extends OxRestBase
         try {
             $ret = array();
             // check for data in request
-            if(isset($this->request->data)  && $this->request->data != ""){
+            if($this->request->data && $this->request->data != ""){
                 /** @var oxList $list */
                 $list = oxNew($class);
                 $bo = $list->getBaseObject();
@@ -189,7 +189,8 @@ class OxRestList extends OxRestBase
                     $oxObj = clone $bo;
                     if(!isset($sOxid) || $sOxid == '') {
                         // create new OXID
-                        $sOxid = oxUtilsObject::getInstance()->generateUId();
+                        $sOxid = oxRegistry::get('oxUtilsObject')->generateUId();
+                        $aObjData['oxid'] = $sOxid;
                     }
                     else {
                         // object id must be new!

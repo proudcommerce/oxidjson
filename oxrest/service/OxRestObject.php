@@ -41,8 +41,33 @@ class OxRestObject extends OxRestBase
             /** @var oxBase $o */
             $o = oxNew($class);
             $o->disableLazyLoading();
-            if ($o->load($oxid)) {
-                return new Response(200, $this->_oxObject2Array($o));
+            $sLoadFunc = "load";
+            switch($class) {
+                case 'oxnewssubscribed':
+                    // for newsletter, we select by user id, not by oxid
+                    $sLoadFunc = "loadFromUserId";
+                    break;
+            }
+            if ($o->$sLoadFunc($oxid)) {
+                $aObject = $this->_oxObject2Array($o);
+                // enrich data?
+                switch(strtolower($class)) {
+                    case 'oxuser':
+                        // get addresses, too
+                        /** @var oxUserAddressList $oAddresses */
+                        $oAddresses = $o->getUserAddresses($oxid);
+                        $aAddresses = array();
+                        if($oAddresses) {
+                            foreach($oAddresses->getArray() as $oData) {
+                                $aAddresses[] = $this->_oxObject2Array($oData);
+                            }
+
+                        }
+                        // add addresses as special array value
+                        $aObject['_oxaddress'] = $aAddresses;
+                        break;
+                }
+                return new Response(200, $aObject);
             }
         } catch (Exception $ex) {
 
@@ -64,10 +89,17 @@ class OxRestObject extends OxRestBase
     {
         try {
             // check for data in request
-            if(isset($this->request->data)  && $this->request->data != ""){
+            if($this->request->data && $this->request->data != ""){
+                $aAddonData = null;
                 $aData = $this->request->data;
                 // convert stdObj to array
                 $aObjData = $this->_objectToArray($aData);
+                foreach($aObjData as $k => $v) {
+                    if(substr($k, 0, 1) === "_") {
+                        $aAddonData[substr($k, 1)] = $v;
+                        unset($aObjData[$k]);
+                    }
+                }
                 // get OXID and create new object by cloning
                 $sOxid = $aObjData['oxid'];
                 $oxObj = oxNew($class);
@@ -76,9 +108,45 @@ class OxRestObject extends OxRestBase
                     $oxObj->assign($aObjData);
                     // save object
                     $oxObj->save();
+                    // re-load to refresh data
+                    if($oxObj->load($sOxid)) {
+                        $aObject = $this->_oxObject2Array($oxObj);
+
+                        // enriched data, e.g. addresses for oxuser?
+                        //$this->_doLog("aAddonData: " . print_r($aAddonData, true));
+                        foreach ($aAddonData as $objName => $objData) {
+                            $oxAddObj = oxNew($objName);
+                            // this "enriched" data comes as array, too
+                            foreach ($objData as $idx => $data) {
+                                $addOxid = $data['oxid'];
+                                // no OXID, create new object
+                                if (!isset($addOxid) || $addOxid == '') {
+                                    // create new OXID
+                                    $addOxid = oxRegistry::get('oxUtilsObject')->generateUId();
+                                    $data['oxid'] = $addOxid;
+                                    // assign new array data
+                                    $oxAddObj->assign($data);
+                                    // save object
+                                    $oxAddObj->save();
+                                } else {
+                                    if ($oxAddObj->load($addOxid)) {
+                                        // assign new array data
+                                        $oxAddObj->assign($data);
+                                        // save object
+                                        $oxAddObj->save();
+                                    }
+                                }
+                                // reload object
+                                if ($oxAddObj->load($addOxid)) {
+                                    $aObject["_" . $objName][] = $this->_oxObject2Array($oxAddObj);
+                                }
+                            }
+                        }
+
+                        return new Response(200, $aObject);
+                    }
                 }
             }
-            return new Response(200, $this->_oxObject2Array($oxObj));
         } catch (Exception $ex) {
             $this->_doLog("Error saving object: " . $ex->getMessage());
         }
@@ -98,16 +166,24 @@ class OxRestObject extends OxRestBase
     {
         try {
             // check for data in request
-            if(isset($this->request->data)  && $this->request->data != ""){                
+            if($this->request->data && $this->request->data != ""){
+                $aAddonData = null;
                 $aData = $this->request->data;
                 // convert stdObj to array
                 $aObjData = $this->_objectToArray($aData);
+                foreach($aObjData as $k => $v) {
+                    if(substr($k, 0, 1) === "_") {
+                        $aAddonData[substr($k, 1)] = $v;
+                        unset($aObjData[$k]);
+                    }
+                }
                 // get OXID and create new object by cloning
                 $sOxid = $aObjData['oxid'];
                 $oxObj = oxNew($class);
                 if(!isset($sOxid) || $sOxid == '') {
                     // create new OXID
-                    $sOxid = oxUtilsObject::getInstance()->generateUId();
+                    $sOxid = oxRegistry('oxUtilsObject')->generateUId();
+                    $aObjData['oxid'] = $sOxid;
                 }
                 else {
                     // object id must be new!
@@ -119,8 +195,42 @@ class OxRestObject extends OxRestBase
                 $oxObj->assign($aObjData);
                 // save object
                 $oxObj->save();
+
+                if($oxObj->load($sOxid)) {
+                    $aObject = $this->_oxObject2Array($oxObj);
+                    // enriched data, e.g. addresses for oxuser?
+                    //$this->_doLog("aAddonData: " . print_r($aAddonData, true));
+                    foreach ($aAddonData as $objName => $objData) {
+                        $oxAddObj = oxNew($objName);
+                        // this "enriched" data comes as array, too
+                        foreach ($objData as $idx => $data) {
+                            $addOxid = $data['oxid'];
+                            // no OXID, create new object
+                            if (!isset($addOxid) || $addOxid == '') {
+                                // create new OXID
+                                $addOxid = oxRegistry::get('oxUtilsObject')->generateUId();
+                                $data['oxid'] = $addOxid;
+                                // assign new array data
+                                $oxAddObj->assign($data);
+                                // save object
+                                $oxAddObj->save();
+                            } else {
+                                if ($oxAddObj->load($addOxid)) {
+                                    // assign new array data
+                                    $oxAddObj->assign($data);
+                                    // save object
+                                    $oxAddObj->save();
+                                }
+                            }
+                            // reload object
+                            if ($oxAddObj->load($addOxid)) {
+                                $aObject["_" . $objName][] = $this->_oxObject2Array($oxAddObj);
+                            }
+                        }
+                    }
+                    return new Response(200, $aObject);
+                }
             }
-            return new Response(200, $this->_oxObject2Array($oxObj));
         } catch (Exception $ex) {
             $this->_doLog("Error saving new object: " . $ex->getMessage());
         }
